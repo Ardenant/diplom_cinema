@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.work/
 
 # next.js
 /.next/
@@ -42,3 +43,7 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# AI assistant context files
+AGENTS.md
+CLAUDE.md

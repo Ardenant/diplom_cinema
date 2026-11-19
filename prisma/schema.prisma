@@ -1,13 +1,240 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Prisma schema для АИС учёта и продажи билетов кинотеатра
+// Документация: https://pris.ly/d/prisma-schema
+//
+// Архитектурные решения:
+//  - Цена фиксированная на уровне сеанса (Showtime.price) — без категорий мест и модификаторов.
+//  - Роли: CLIENT и ADMIN (enum Role на пользователе).
+//  - Уникальность билета на месте + сеансе обеспечивается на уровне БД (@@unique).
+//  - Auth-таблицы (Account/Session/VerificationToken) — стандартные для @auth/prisma-adapter.
 
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
 }
 
+// В Prisma v7 url подключения вынесен в prisma.config.ts (datasource.url).
+// В schema.prisma остаётся только provider — иначе ошибка P1012.
 datasource db {
   provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUTH (NextAuth.js / Auth.js v5 + Prisma Adapter)
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  CLIENT
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  // Для credentials-провайдера (логин/пароль). Хешируется через bcrypt.
+  // Null, если пользователь зашёл только через OAuth (Google и т.п.).
+  passwordHash  String?
+  role          Role      @default(CLIENT)
+  // Баллы программы лояльности. Начисляются при покупках зарегистрированным
+  // пользователям (логика будет в дипломе). Для гостей — N/A.
+  loyaltyPoints Int       @default(0)
+
+  accounts Account[]
+  sessions Session[]
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Связка с внешними провайдерами (Google, GitHub и т.д.). Auth.js пишет сюда сам.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// Серверные сессии Auth.js (при database session strategy).
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Токены для magic-link / email-верификации.
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────
+// DOMAIN: каталог фильмов
+// ─────────────────────────────────────────────────────────────
+
+model Genre {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  movies Movie[]
+}
+
+model Movie {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  posterUrl   String?
+  trailerUrl  String?
+  durationMin Int      // продолжительность в минутах
+  ageRating   String   // "0+", "6+", "12+", "16+", "18+"
+  director    String?
+  cast        String?  // актёры — простой строкой через запятую
+  releaseDate DateTime
+  // Флаг видимости в публичном каталоге. Админ может скрыть фильм без удаления.
+  isActive    Boolean  @default(true)
+
+  genres    Genre[]
+  showtimes Showtime[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([releaseDate])
+}
+
+// ─────────────────────────────────────────────────────────────
+// DOMAIN: залы и места
+// ─────────────────────────────────────────────────────────────
+
+enum HallFormat {
+  STANDARD_2D
+  FORMAT_3D
+  IMAX
+  VIP
+}
+
+model Hall {
+  id          String     @id @default(cuid())
+  name        String     @unique // "Зал 1", "VIP-зал"
+  format      HallFormat @default(STANDARD_2D)
+  rowsCount   Int        // используется при автогенерации мест
+  seatsPerRow Int
+  aislesAfter Int[]      @default([])
+
+  seats     Seat[]
+  showtimes Showtime[]
+}
+
+model Seat {
+  id     String @id @default(cuid())
+  hallId String
+  row    Int
+  number Int
+  isActive Boolean @default(true)
+
+  hall    Hall     @relation(fields: [hallId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+
+  // В одном зале не может быть двух мест с одинаковыми координатами.
+  @@unique([hallId, row, number])
+  @@index([hallId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// DOMAIN: сеансы, бронирования, билеты
+// ─────────────────────────────────────────────────────────────
+
+// Сеанс кинопоказа. Назван Showtime, а не Session, потому что Session уже занят NextAuth.
+model Showtime {
+  id       String   @id @default(cuid())
+  movieId  String
+  hallId   String
+  startsAt DateTime
+  // Фиксированная цена за билет на этот сеанс.
+  price    Decimal  @db.Decimal(10, 2)
+
+  movie    Movie     @relation(fields: [movieId], references: [id])
+  hall     Hall      @relation(fields: [hallId], references: [id])
+  bookings Booking[]
+  tickets  Ticket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Индекс для быстрого поиска "сеансы на дату" и "сеансы фильма".
+  @@index([startsAt])
+  @@index([movieId, startsAt])
+}
+
+enum BookingStatus {
+  PENDING   // создан, ждёт оплаты
+  PAID      // оплачен, билеты действительны
+  CANCELLED // отменён (пользователем или по таймауту)
+}
+
+// Заказ — корневая сущность покупки. Один заказ = один сеанс, но N билетов.
+// userId опционален: гости могут оформить заказ, указав только contactEmail.
+// Для зарегистрированных пользователей contactEmail копируется из User.email
+// на момент покупки (на случай, если email потом сменится).
+model Booking {
+  id           String        @id @default(cuid())
+  userId       String?
+  showtimeId   String
+  contactEmail String        // email для отправки билета (обязательное)
+  status       BookingStatus @default(PENDING)
+  totalPrice   Decimal       @db.Decimal(10, 2)
+
+  user     User?    @relation(fields: [userId], references: [id])
+  showtime Showtime @relation(fields: [showtimeId], references: [id])
+  tickets  Ticket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([showtimeId])
+  @@index([status])
+  @@index([contactEmail])
+}
+
+// Билет — конкретное место на конкретный сеанс. Привязан к Booking.
+model Ticket {
+  id         String  @id @default(cuid())
+  bookingId  String
+  showtimeId String
+  seatId     String
+  price      Decimal @db.Decimal(10, 2)
+  // Уникальный код для прохода (QR/штрихкод). Генерируется автоматически.
+  code       String  @unique @default(cuid())
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  showtime Showtime @relation(fields: [showtimeId], references: [id])
+  seat     Seat     @relation(fields: [seatId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  // КРИТИЧЕСКИЙ инвариант: одно место на один сеанс — только один билет.
+  // Защищает от двойной продажи на уровне СУБД, а не только приложения.
+  @@unique([showtimeId, seatId])
+  @@index([bookingId])
 }

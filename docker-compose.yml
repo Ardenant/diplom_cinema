@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: cinema_pass
       POSTGRES_DB: cinema
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - cinema_pgdata:/var/lib/postgresql/data
 

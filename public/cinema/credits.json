@@ -1,0 +1,35 @@
+{
+    "film":  {
+                 "title":  "Dune (2021)",
+                 "source":  "https://theasc.com/articles/dune-fear-is-the-mind-killer",
+                 "credit":  "© Warner Bros. Entertainment",
+                 "image":  "https://cms-assets.theasc.com/Dune-Featured.jpg",
+                 "file":  "dune-desert.jpg"
+             },
+    "fabric":  {
+                   "license":  "CC0",
+                   "maps":  [
+                                {
+                                    "url":  "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/velour_velvet/velour_velvet_diff_1k.jpg",
+                                    "md5":  "fa3a7ef3606bf7591b8f8577992e7228",
+                                    "file":  "velvet-color.jpg"
+                                },
+                                {
+                                    "url":  "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/velour_velvet/velour_velvet_nor_gl_1k.jpg",
+                                    "md5":  "41009a399cb4d45e44636a515cd4c8c8",
+                                    "file":  "velvet-normal.jpg"
+                                },
+                                {
+                                    "url":  "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/velour_velvet/velour_velvet_rough_1k.jpg",
+                                    "md5":  "fac679bf7a69501a7402d832667fbc06",
+                                    "file":  "velvet-roughness.jpg"
+                                }
+                            ],
+                   "source":  "https://polyhaven.com/a/velour_velvet",
+                   "asset":  "Velour Velvet",
+                   "authors":  [
+                                   "colormass",
+                                   "Rico Cilliers"
+                               ]
+               }
+}
